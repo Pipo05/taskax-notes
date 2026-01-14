@@ -1,54 +1,59 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-class NotesListPage extends StatelessWidget {
+import 'notes_controller.dart';
+
+class NotesListPage extends ConsumerWidget {
   const NotesListPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final notesAsync = ref.watch(notesStreamProvider);
+
     return Scaffold(
       appBar: AppBar(title: const Text('Taskax Notes')),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => context.go('/notes/new'),
+        onPressed: () async {
+          // Create note then open editor
+          final noteId = await ref.read(createNoteProvider.future);
+          if (context.mounted) context.go('/notes/$noteId');
+        },
         child: const Icon(Icons.add),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(12),
-        children: [
-          _NoteTile(
-            title: 'Welcome to Taskax Notes',
-            subtitle: 'Tap to edit (placeholder)',
-            onTap: () => context.go('/notes/demo-note-id'),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Next: we’ll replace this list with Isar-backed notes + sync.',
-          ),
-        ],
-      ),
-    );
-  }
-}
+      body: notesAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text('Error: $e')),
+        data: (notes) {
+          if (notes.isEmpty) {
+            return const Center(child: Text('No notes yet. Tap + to create one.'));
+          }
 
-class _NoteTile extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
+          return ListView.separated(
+            padding: const EdgeInsets.all(12),
+            itemCount: notes.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              final n = notes[index];
+              final title = n.title.trim().isEmpty ? 'Untitled note' : n.title.trim();
 
-  const _NoteTile({
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: ListTile(
-        title: Text(title),
-        subtitle: Text(subtitle),
-        onTap: onTap,
-        trailing: const Icon(Icons.chevron_right),
+              return Card(
+                child: ListTile(
+                  title: Text(title),
+                  subtitle: Text('Updated: ${n.updatedAt}'),
+                  onTap: () => context.go('/notes/${n.id}'),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () async {
+                      final repo = ref.read(notesRepositoryProvider);
+                      await repo.deleteNote(n.id);
+                    },
+                  ),
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }
